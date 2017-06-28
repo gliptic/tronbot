@@ -1,0 +1,64 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="src\silly_bot.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\bot.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\board.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\parser.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mcbotj.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\tigr.c">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="gfx.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="src">
+      <UniqueIdentifier>{bb81a1c3-5038-4e42-8ece-4fc4e47f0e88}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="driver.hpp" />
+    <ClInclude Include="src\silly_bot.hpp">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\bot.hpp">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\board.hpp">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\game_enums.hpp">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\parser.hpp">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mcbotj.hpp">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\rand.hpp">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\gametree.hpp">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\thread.hpp">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\tigr.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="gfx.hpp" />
+  </ItemGroup>
+</Project>
