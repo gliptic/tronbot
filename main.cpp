@@ -278,6 +278,8 @@ int tests() {
 }
 
 int main() {
+	init_board_tables();
+
 	//return test_skip();
 	return bench();
 	//return tests();

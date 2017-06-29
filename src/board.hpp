@@ -10,6 +10,8 @@
 #include <nmmintrin.h>
 #endif
 
+void init_board_tables();
+
 struct PlayerHeading {
 	PlayerHeading() {
 	}
@@ -18,8 +20,8 @@ struct PlayerHeading {
 		: pos(pos), prev_move(prev_move) {
 	}
 
-	Vec next_pos(BoardMoves new_move) {
-		Vec new_pos = this->pos;
+	static Vec next_pos(Vec cur_pos, BoardMoves new_move) {
+		Vec new_pos = cur_pos;
 		switch (new_move) {
 		case UP: --new_pos.v[1]; break;
 		case DOWN: ++new_pos.v[1]; break;
@@ -31,7 +33,7 @@ struct PlayerHeading {
 	}
 
 	Vec make_move(BoardMoves new_move) {
-		Vec new_pos = this->next_pos(new_move);
+		Vec new_pos = next_pos(this->pos, new_move);
 
 		this->pos = new_pos;
 		this->prev_move = new_move;
@@ -246,12 +248,12 @@ struct BitBoard {
 		bits[pos.y() + 1] |= (u32(1) << (pos.x() & 31));
 	}
 
-	bool get(Vec pos) {
+	bool get(Vec pos) const {
 		assert(pos.y() + 1 < 18);
 		return (bits[pos.y() + 1] >> (pos.x() & 31)) & 1;
 	}
 
-	u32 get_row(u32 y) {
+	u32 get_row(u32 y) const {
 		return bits[y + 1];
 	}
 
@@ -265,7 +267,7 @@ struct BitBoard {
 		bits[y + 1] |= set_bits;
 	}
 
-	bool is_wall(Vec pos) {
+	bool is_wall(Vec pos) const {
 		return this->get(pos);
 	}
 
@@ -284,6 +286,82 @@ struct BitBoard {
 		}
 	}
 };
+
+template<typename T>
+struct ShiftBoard {
+	ShiftBoard(T const& a, i32 shift) : a(a), shift(shift) {
+	}
+
+	u32 get_row(u32 y) const {
+		return (a.get_row(y) >> shift) | 0xffff0000;
+	}
+
+	T const& a;
+	i32 shift;
+};
+
+template<typename A, typename B>
+struct OrBoard {
+	OrBoard(A const& a, B const& b) : a(a), b(b) {
+	}
+
+	u32 get_row(u32 y) const {
+		return a.get_row(y) | b.get_row(y);
+	}
+
+	A const& a;
+	B const& b;
+};
+
+template<typename A, typename B>
+inline OrBoard<A, B> or_board(A const& a, B const& b) {
+	return OrBoard<A, B>(a, b);
+}
+
+template<typename T>
+inline ShiftBoard<T> shift_board(T const& a, i32 shift) {
+	return ShiftBoard<T>(a, shift);
+}
+
+//  0
+// 321
+//76 54
+// a98
+//  b
+
+template<typename B>
+inline u32 diamond5(B const& board, Vec pos) {
+	assert(pos.y() < 16);
+	u32 r0 = pos.y() == 0 ? 0xffffffff : board.get_row(pos.y() - 2);
+	u32 r1 = board.get_row(pos.y() - 1);
+	u32 r2 = board.get_row(pos.y());
+	u32 r3 = board.get_row(pos.y() + 1);
+	u32 r4 = pos.y() == 15 ? 0xffffffff : board.get_row(pos.y() + 2);
+
+	u32 d = (r0 >> pos.x()) & 1;
+	d |= rotr(r1, pos.x() - 2) & (7 << 1);
+	d |= rotr(r2, pos.x() - 6) & (3 << 4);
+	d |= rotr(r2, pos.x() - 5) & (3 << 6);
+	d |= rotr(r3, pos.x() - 9) & (7 << 8);
+	d |= rotr(r4, pos.x() - 11) & (1 << 11);
+
+	return d;
+}
+
+inline u32 index_diamond5(u32 d5, u32 first_dir) {
+	switch (first_dir) {
+	case RIGHT:
+		return ((d5 >> 5) & 1) | (((d5 >> 1) & 1) << 1) | (((d5 >> 4) & 1) << 2) | (((d5 >> 8) & 1) << 3);
+	case DOWN:
+		return ((d5 >> 9) & 1) | (((d5 >> 8) & 1) << 1) | (((d5 >> 11) & 1) << 2) | (((d5 >> 10) & 1) << 3);
+	case LEFT:
+		return ((d5 >> 6) & 1) | (((d5 >> 10) & 1) << 1) | (((d5 >> 7) & 1) << 2) | (((d5 >> 3) & 1) << 3);
+	case UP:
+		return ((d5 >> 2) & 1) | (((d5 >> 3) & 1) << 1) | (((d5 >> 0) & 1) << 2) | (((d5 >> 1) & 1) << 3);
+	default:
+		return 0;
+	}
+}
 
 struct Board2 : BoardCommon<Board2>, BitBoard {
 
@@ -353,6 +431,31 @@ struct MinMax {
 
 	MinMax operator|(MinMax other) const {
 		return MinMax(std::min(this->min, other.min), std::max(this->max, other.max));
+	}
+
+	bool and_(MinMax other) {
+		bool changed = false;
+		if (other.min > this->min) {
+			this->min = other.min;
+			changed = true;
+		}
+		if (other.max < this->max) {
+			this->max = other.max;
+			changed = true;
+		}
+		return changed;
+	}
+
+	bool operator<(MinMax& other) const {
+		return this->max <= other.min;
+	}
+
+	bool operator==(MinMax const& other) const {
+		return this->min == other.min && this->max == other.max;
+	}
+
+	bool operator!=(MinMax const& other) const {
+		return !operator==(other);
 	}
 };
 

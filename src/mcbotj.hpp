@@ -376,6 +376,7 @@ struct PlayerCounter {
 	typedef CounterF Counter;
 
 	Counter move[3];
+	MinMax<> life[3];
 
 	template<int Variant>
 	u32 pick_move(LcgPair& rng) {
@@ -448,7 +449,7 @@ struct PlayerCounter {
 
 struct GameNodeJ : BaseGameNodeJ {
 	typedef CounterF::SelectInfo SelectInfo;
-	typedef CounterF Counter;
+	typedef PlayerCounter::Counter Counter;
 
 	PlayerCounter players[2];
 	MinMax<> life[ChildCount][2];
@@ -465,7 +466,6 @@ struct GameNodeJ : BaseGameNodeJ {
 	template<int Variant>
 	ChildIndexJ select(LcgPair& rng, SelectInfo& select_info) {
 		u32 p0, p1;
-#if 1
 		int unvisited_count0 = (this->players[0].move[0].total == 0) + (this->players[0].move[1].total == 0) + (this->players[0].move[2].total == 0);
 
 		if (unvisited_count0 > 0) {
@@ -479,14 +479,24 @@ struct GameNodeJ : BaseGameNodeJ {
 					--pick;
 				}
 			}
-		} else
-#endif
-		{
+		} else {
 			auto& p = players[0];
+
+#if 0
+			for (u32 m1 = 0; m1 < 3; ++m1) {
+				auto min_min = std::min({ this->life[0 + m1 * 3][0].min, this->life[1 + m1 * 3][0].min, this->life[2 + m1 * 3][0].min });
+				for (u32 m0 = 0; m0 < 3; ++m0) {
+					if (this->life[m0 + m1 * 3][0].max < min_min) {
+						// Prune (m0, m1)
+						printf("%d %d\n", m0, m1);
+					}
+				}
+			}
+#endif
+
 			p0 = p.pick_move<Variant>(rng);
 		}
 
-#if 1
 		int unvisited_count1 = (this->players[1].move[0].total == 0) + (this->players[1].move[1].total == 0) + (this->players[1].move[2].total == 0);
 		if (unvisited_count1 > 0) {
 			int pick = rng.get_u32(unvisited_count1);
@@ -499,9 +509,7 @@ struct GameNodeJ : BaseGameNodeJ {
 					--pick;
 				}
 			}
-		} else
-#endif
-		{
+		} else {
 			auto& p = players[1];
 			p1 = p.pick_move<Variant>(rng);
 		}
@@ -566,6 +574,7 @@ struct McBotJ : Bot {
 	Writer* writer;
 	bool has_written_board;
 	u32 updates;
+	u32 cells_left;
 
 	CounterF amaf[2][256];
 	vector<VisitedEdge<GN>> visited;
@@ -576,7 +585,8 @@ struct McBotJ : Bot {
 		  has_written_board(false),
 		  total_updates(0),
 		  same_count(0),
-		  updates(0) {
+		  updates(0),
+		  cells_left(0) {
 
 		init_ucb_tab();
 
@@ -660,6 +670,11 @@ struct McBotJ : Bot {
 			Bot::update(board);
 			advance(prev_moves, BoardMovesJ(state.board.headings[0].prev_move, state.board.headings[1].prev_move));
 		}
+
+		this->cells_left = 0;
+		for (u32 y = 0; y < 16; ++y) {
+			this->cells_left += popcount16(~board.get_row(y) & 0xffff);
+		}
 		++updates;
 		visited.clear();
 	}
@@ -721,56 +736,40 @@ struct McBotJ : Bot {
 		}
 	}
 
-	inline u32 expand_node(Board& board);
+	inline u32 expand_node(Board& board, u32 cells_left_count);
 	void run();
 };
 
 template<int Variant, typename GN>
-inline typename GN::Counter warmup(u32 player_id, McBotJ<Variant, GN>& self, Board2& board, Vec next_pos) {
-	return ;
-}
-
-template<int Variant, typename GN>
-inline void warmup(McBotJ<Variant, GN>& self, GN& ch, Board& board) {
+inline void warmup(McBotJ<Variant, GN>& self, GN& ch, Board& board, u32 cells_left_count) {
 	for (u32 m = 0; m < 3; ++m) {
-		for (u32 p = 0; p < 2; ++p) {
-			bool wall_hit = board.is_wall(next_pos); // ? GN::Counter::unlikely() : GN::Counter::even_zero()
+		auto next_pos0 = PlayerHeading::next_pos(board.headings[0].pos, board.headings[0].get_move(m));
+		auto next_pos1 = PlayerHeading::next_pos(board.headings[1].pos, board.headings[1].get_move(m));
+		bool wall_hit0 = board.is_wall(next_pos0);
+		bool wall_hit1 = board.is_wall(next_pos1);
 
-			auto next_pos = board.headings[p].next_pos(board.headings[p].get_move(m));
-			ch.players[p].move[m] = wall_hit ? GN::Counter::unlikely() : GN::Counter::even_zero();
+		auto life0 = wall_hit0 ? MinMax<>::zero() : MinMax<>(1, cells_left_count);
+		auto life1 = wall_hit1 ? MinMax<>::zero() : MinMax<>(1, cells_left_count);
 
-			//ch.life[]
-		}
+		ch.players[0].move[m] = wall_hit0 ? GN::Counter::unlikely() : GN::Counter::even_zero();
+		ch.players[0].life[m] = life0;
+		ch.players[1].move[m] = wall_hit1 ? GN::Counter::unlikely() : GN::Counter::even_zero();
+		ch.players[1].life[m] = life1;
 
-		//ch.life[0 + 0 * 3][0] = 
+		ch.life[m + 0 * 3][0] = life0;
+		ch.life[m + 1 * 3][0] = life0;
+		ch.life[m + 2 * 3][0] = life0;
+		ch.life[0 + m * 3][1] = life1;
+		ch.life[1 + m * 3][1] = life1;
+		ch.life[2 + m * 3][1] = life1;
 	}
-
-	auto next_pos00 = board.headings[0].next_pos(board.headings[0].get_move(0));
-	auto next_pos01 = board.headings[0].next_pos(board.headings[0].get_move(1));
-	auto next_pos02 = board.headings[0].next_pos(board.headings[0].get_move(2));
-
-	auto next_pos10 = board.headings[1].next_pos(board.headings[1].get_move(0));
-	auto next_pos11 = board.headings[1].next_pos(board.headings[1].get_move(1));
-	auto next_pos12 = board.headings[1].next_pos(board.headings[1].get_move(2));
-
-	// TODO: Warm up with even odds if both bots crash no matter the move
-
-	// TODO: If all moves for a player are a loss, propagate
-	ch.players[0].move[0] = warmup<Variant, GN>(0, self, board, next_pos00);
-	ch.players[0].move[1] = warmup<Variant, GN>(0, self, board, next_pos01);
-	ch.players[0].move[2] = warmup<Variant, GN>(0, self, board, next_pos02);
-	ch.players[1].move[0] = warmup<Variant, GN>(1, self, board, next_pos10);
-	ch.players[1].move[1] = warmup<Variant, GN>(1, self, board, next_pos11);
-	ch.players[1].move[2] = warmup<Variant, GN>(1, self, board, next_pos12);
-
-	ch.life[0 + 0*3][0] = 
 }
 
 template<int Variant, typename GN>
-inline u32 McBotJ<Variant, GN>::expand_node(Board& board) {
+inline u32 McBotJ<Variant, GN>::expand_node(Board& board, u32 cells_left_count) {
 	u32 node = tree.alloc_node();
 	auto& r = tree.get(node);
-	warmup(*this, r, board);
+	warmup(*this, r, board, cells_left_count);
 	return node;
 }
 
@@ -780,9 +779,10 @@ void McBotJ<Variant, GN>::run() {
 	
 	u32 cur_depth = 0;
 	u32 update_count = this->updates;
+	u32 cells_left_count = this->cells_left;
 	NodeId node = tree.root;
 	if (node == 0) {
-		tree.root = node = expand_node(state.board);
+		tree.root = node = expand_node(state.board, cells_left_count);
 	}
 
 	visited.clear();
@@ -792,6 +792,7 @@ void McBotJ<Variant, GN>::run() {
 
 	while (true) {
 		typename GN::SelectInfo select_info;
+		
 		ChildIndexJ child = select(rng, node, update_count, select_info);
 		++update_count;
 
@@ -806,8 +807,8 @@ void McBotJ<Variant, GN>::run() {
 			
 			if (end_state) {
 				p0 = end_state == 1 ? 0.f : (end_state == 2 ? 1.f : 0.5f);
-				result[0] = (end_state & 1) ? MinMax<>::zero() : MinMax<>::at_least(1);
-				result[1] = (end_state & 2) ? MinMax<>::zero() : MinMax<>::at_least(1);
+				result[0] = (end_state & 1) ? MinMax<>::zero() : MinMax<>(1, cells_left_count);
+				result[1] = (end_state & 2) ? MinMax<>::zero() : MinMax<>(1, cells_left_count);
 			} else {
 				score_board4(state.board, false, this->rng, result);
 				i32 score = (i32)result[0].max - (i32)result[1].max;
@@ -817,7 +818,7 @@ void McBotJ<Variant, GN>::run() {
 					printf("%d %d\n", score, score2);
 				}*/
 				p0 = score < 0 ? 0.f : (score > 0 ? 1.f : 0.5f);
-				// TODO: Mark subnode as "survivor" mode if there is no intersection
+				// TODO: Create "survivor"-subnode if there is no intersection after last move
 
 				// Life is measured from the last node recorded in visited
 				result[0] = result[0] + 1;
@@ -833,7 +834,7 @@ void McBotJ<Variant, GN>::run() {
 			u32 end_state = state.update(state.board.get_moves(child));
 
 			if (!end_state && child_id == 0) {
-				tree.get(node).children[child_index] = child_id = expand_node(state.board);
+				tree.get(node).children[child_index] = child_id = expand_node(state.board, cells_left_count - 2);
 			}
 
 			node = child_id;
@@ -842,18 +843,21 @@ void McBotJ<Variant, GN>::run() {
 
 			if (end_state) {
 				p0 = end_state == 1 ? 0.f : (end_state == 2 ? 1.f : 0.5f);
-				result[0] = (end_state & 1) ? MinMax<>::zero() : MinMax<>::at_least(1);
-				result[1] = (end_state & 2) ? MinMax<>::zero() : MinMax<>::at_least(1);
+				result[0] = (end_state & 1) ? MinMax<>::zero() : MinMax<>(1, cells_left_count);
+				result[1] = (end_state & 2) ? MinMax<>::zero() : MinMax<>(1, cells_left_count);
 				break;
 			}
 		}
+
+		cells_left_count -= 2;
 	}
 
 	this->depth = std::max(this->depth, cur_depth);
 
 	f32 scores[2] = { p0, 1.f - p0 };
+	bool prop[2] = { true, true };
 
-	for (u32 i = 0; i < visited.size(); ++i) {
+	for (u32 i = visited.size(); i-- > 0; ) {
 		auto& v = visited[i];
 
 		auto& n = tree.get(v.node);
@@ -862,6 +866,26 @@ void McBotJ<Variant, GN>::run() {
 		n.players[1].move[v.edge.v[1]].add<Variant>(scores[1], 1, v);
 		amaf[0][v.to_pos[0]].add<Variant>(scores[0], 0, CounterF::SelectInfo());
 		amaf[1][v.to_pos[1]].add<Variant>(scores[1], 1, CounterF::SelectInfo());
+
+		auto& l = n.life[v.edge.index()];
+		
+		for (u32 p = 0; p < 2; ++p) {
+			if (prop[p]) {
+				bool new_prop = l[p].and_(result[p]);
+				prop[p] = new_prop;
+
+				if (new_prop) {
+					auto m = v.edge.v[p];
+					if (p == 0) {
+						n.players[p].life[m] = n.life[0 + m * 3][p] | n.life[1 + m * 3][p] | n.life[2 + m * 3][p];
+					} else {
+						n.players[p].life[m] = n.life[m + 0 * 3][p] | n.life[m + 1 * 3][p] | n.life[m + 2 * 3][p];
+					}
+
+					result[p] = (n.players[p].life[0] | n.players[p].life[1] | n.players[p].life[2]) + 1;
+				}
+			}
+		}
 	}
 
 	this->total_updates += visited.size();

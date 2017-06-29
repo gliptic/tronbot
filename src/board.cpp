@@ -305,6 +305,44 @@ struct D3 {
 	}
 };
 
+u8 moves_d5[1 << 12];
+
+void init_board_tables() {
+	for (u32 i = 0; i < 1 << 12; ++i) {
+		u32 best = 1;
+		u32 best_moves = NONE;
+
+		for (u32 m = 0; m < 4; ++m) {
+			u32 move = 1 << m;
+			u32 mask = index_diamond5(i, move);
+
+			u32 score;
+			if (mask & 0b0001) {
+				score = 0; // Blocked
+			} else if (mask == 0b1110) {
+				score = 1; // Blocked after one move
+			} else if (mask == 0b1010 || mask == 0b0100) {
+				score = 2; // Potential cut
+			} else if (mask == 0x0000) {
+				score = 3; // Space
+			} else if (mask == 0b0110 || mask == 0b1100) {
+				score = 5; // Corner
+			} else {
+				score = 4;
+			}
+
+			if (score > best) {
+				best = score;
+				best_moves = move;
+			} else if (score == best) {
+				best_moves |= move;
+			}
+		}
+
+		moves_d5[i] = (u8)best_moves;
+	}
+}
+
 template<bool CloseAll>
 struct D4 {
 	BitBoard closed;
@@ -487,6 +525,7 @@ struct D4 {
 
 			for (u32 i = 0; i < 2; ++i) {
 				if (min[i] < 0) {
+#if 0
 					BoardMoves moves = NONE;
 
 					Vec candidates[] = {
@@ -503,13 +542,16 @@ struct D4 {
 							moves = moves | BoardMoves(1 << j);
 						}
 					}
+#else
+					BoardMoves moves = (BoardMoves)moves_d5[diamond5(or_board(closed, shift_board(opened, i == 0 ? 16 : 0)), pos[i])];
+#endif
 
 					if (moves != NONE) {
 						while (true) {
 							u32 move = rng.next() >> (32 - 2);
 							if (moves & (1 << move)) {
-								pos[i] = candidates[move];
-								closed.set(pos[i]);
+								pos[i] = PlayerHeading::next_pos(pos[i], BoardMoves(1 << move));
+								closed.or_row(pos[i].y(), (1 << pos[i].x()) | (1 << (pos[i].x() + 16)));
 								break;
 							}
 						}
