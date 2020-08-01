@@ -7,6 +7,7 @@ SillyBot::SillyBot(LcgPair& rng, int variant)
 BoardMoves SillyBot::move(int time) {
 	//auto moves = state.board.legal_moves(player_id);
 	//auto moves = state.board.best_fill_moves(player_id);
+	//auto moves = best_lookup_moves(state.board, player_id);
 	auto moves = best_dist_moves(state.board, player_id, this->rng);
 	//auto moves = variant ? state.board.legal_moves2(player_id) : state.board.legal_moves(player_id);
 	if (moves == NONE) {

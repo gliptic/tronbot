@@ -63,7 +63,7 @@ struct BotProcess : BaseBot {
 	TL_NON_COPYABLE(BotProcess);
 	TL_NON_MOVABLE(BotProcess);
 
-	BotProcess(LcgPair& rng)
+	BotProcess(LcgPair const& rng)
 		: bot(this->rng, 0)
 		, thread(Thread::create(true, run, this))
 		, rng(rng)
@@ -185,9 +185,17 @@ int bench() {
 	bot.update(state.board);
 	auto before = ticks();
 	for (int i = 0; i < 400000; ++i) {
-		if (i == 0) debug_board = true;
+		if (i == 287811) {
+			//debug_board = true;
+		}
 		bot.run();
 	}
+	auto& n = bot.tree.get(bot.tree.root);
+	for (u32 i = 0; i < 9; ++i) {
+		printf("[%3d %3d] ", n.life[i][0].min, n.life[i][0].max);
+		if ((i + 1) % 3 == 0) printf("\n");
+	}
+	printf("pruned %d subtrees\n", bot.pruned);
 	auto after = ticks();
 	printf("%d ms\n", after - before);
 	return 0;
@@ -228,8 +236,9 @@ int tests() {
 
 		//Game game(rng, std::make_unique<McBotJ<1>>(rng), std::make_unique<McBotJ<0>>(rng));
 		//Game game(rng, std::make_unique<BotProcess>(1, rng), std::make_unique<BotProcess>(1, rng));
-		Game game(rng, std::make_unique<BotProcess<1, GameNodeJ>>(rng), std::make_unique<BotProcess<0>>(rng));
-		//Game game(rng, std::make_unique<BotProcess<1>>(rng), std::make_unique<SillyBot>(rng, 0));
+		//Game game(rng, std::make_unique<BotProcess<1, GameNodeJ>>(rng), std::make_unique<BotProcess<0>>(rng));
+		Game game(rng, std::make_unique<BotProcess<0>>(rng), std::make_unique<BotProcess<0>>(rng));
+		//Game game(rng, std::make_unique<SillyBot>(rng, 0), std::make_unique<SillyBot>(rng, 0));
 
 		rng.next();
 		
@@ -241,6 +250,7 @@ int tests() {
 #endif
 			auto moves = game.update_bots();
 
+			status = game.update_(moves);
 #if RENDER
 			if ((f % skip) == 0) {
 				double diag[16][16];
@@ -253,7 +263,6 @@ int tests() {
 				printf("[%d %d %d]\n", wins[0], wins[1], wins[2]);
 			}
 #endif
-			status = game.update_(moves);
 			++f;
 		} while (status == 0);
 
@@ -277,11 +286,36 @@ int tests() {
 	return 0;
 }
 
+#include "src/negamax.hpp"
+
 int main() {
 	init_board_tables();
+	return tests();
 
 	//return test_skip();
-	return bench();
-	//return tests();
+	//return bench();
+
+#if false
+	negamax::init();
+
+	negamax::Board board;
+
+	for (int i = 1; ; ++i) {
+
+		negamax::Negamax nm;
+
+
+		{
+			auto before = ticks();
+
+			//printf("%d ms\n", after - before);
+			//let (v, evals) = Ai2::negamax(board, i, -std::f32::INFINITY, std::f32::INFINITY, 0);
+			//println!("{} {:?}, {} evals: {}", i, now.elapsed(), v, evals);
+			auto v = nm.negamax_3(board, i, -10000, 10000);
+			auto after = ticks();
+			printf("%d %d ms, %d evals: %d\n", i, after - before, v, (u32)nm.total_evals);
+		}
+	}
+#endif
 }
 

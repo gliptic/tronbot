@@ -6,6 +6,8 @@
 
 #include "../gfx.hpp"
 
+u8 moves_d5[1 << 12];
+
 Board2::Board2() {
 	this->clear();
 }
@@ -305,8 +307,6 @@ struct D3 {
 	}
 };
 
-u8 moves_d5[1 << 12];
-
 void init_board_tables() {
 	for (u32 i = 0; i < 1 << 12; ++i) {
 		u32 best = 1;
@@ -506,7 +506,7 @@ struct D4 {
 		u32 diff = 1;
 				
 		for (u8 d = 1;; ++d) {
-			if (true && debug_board) {
+			if (false && debug_board) {
 				BitBoard opened1;
 				for (u32 y = 0; y < 16; ++y) {
 					opened1.set_row(y, opened.get_row(y) >> 16);
@@ -517,63 +517,50 @@ struct D4 {
 				render_board(3, boards, colors, 0, 0);
 			}
 
-			if (diff) {
+			if (CloseAll || diff) {
 				diff = expand(begin, end, d);
 			}
 
-			u32 end_state = 0;
+			if (!CloseAll) {
+				u32 end_state = 0;
 
-			for (u32 i = 0; i < 2; ++i) {
-				if (min[i] < 0) {
-#if 0
-					BoardMoves moves = NONE;
+				for (u32 i = 0; i < 2; ++i) {
+					if (min[i] < 0) {
+						BoardMoves moves = (BoardMoves)moves_d5[diamond5(or_board(closed, shift_board(opened, i == 0 ? 16 : 0)), pos[i])];
 
-					Vec candidates[] = {
-						Vec(pos[i].x() + 1, pos[i].y()),
-						Vec(pos[i].x(), pos[i].y() + 1),
-						Vec(pos[i].x() - 1, pos[i].y()),
-						Vec(pos[i].x(), pos[i].y() - 1),
-					};
-
-					for (u32 j = 0; j < 4; ++j) {
-						if (candidates[j].x() < 16
-						 && !closed.get(candidates[j])
-						 && !opened.get(Vec(candidates[j].x() + (i == 0 ? 16 : 0), candidates[j].y()))) {
-							moves = moves | BoardMoves(1 << j);
-						}
-					}
-#else
-					BoardMoves moves = (BoardMoves)moves_d5[diamond5(or_board(closed, shift_board(opened, i == 0 ? 16 : 0)), pos[i])];
-#endif
-
-					if (moves != NONE) {
-						while (true) {
-							u32 move = rng.next() >> (32 - 2);
-							if (moves & (1 << move)) {
-								pos[i] = PlayerHeading::next_pos(pos[i], BoardMoves(1 << move));
-								closed.or_row(pos[i].y(), (1 << pos[i].x()) | (1 << (pos[i].x() + 16)));
-								break;
+						if (moves != NONE) {
+							while (true) {
+								u32 move = rng.next() >> (32 - 2);
+								if (moves & (1 << move)) {
+									pos[i] = PlayerHeading::next_pos(pos[i], BoardMoves(1 << move));
+									closed.or_row(pos[i].y(), (1 << pos[i].x()) | (1 << (pos[i].x() + 16)));
+									break;
+								}
 							}
+						} else {
+							end_state |= 1 << i;
 						}
-					} else {
-						end_state |= 1 << i;
 					}
 				}
-			}
 
-			if (pos[0] == pos[1]) {
-				end_state = 3;
-			}
-
-			for (u32 i = 0; i < 2; ++i) {
-				if (min[i] < 0 && (end_state >> i) & 1) {
-					// TODO: We can fill 'closed' with this players 'opened' to terminate BFS earlier
-					min[i] = (i32)d - 1;
+				if (pos[0] == pos[1]) {
+					end_state = 3;
 				}
-			}
 
-			if (!diff && min[0] >= 0 && min[1] >= 0) {
-				break;
+				for (u32 i = 0; i < 2; ++i) {
+					if (min[i] < 0 && (end_state >> i) & 1) {
+						// TODO: We can fill 'closed' with this players 'opened' to terminate BFS earlier
+						min[i] = (i32)d - 1;
+					}
+				}
+
+				if (!diff && min[0] >= 0 && min[1] >= 0) {
+					break;
+				}
+			} else {
+				if (!diff) {
+					break;
+				}
 			}
 		}
 
@@ -689,6 +676,22 @@ void score_board4(Board2& board, bool patterned, LcgPair& rng, MinMax<> (&result
 	result[1] = MinMax<>(d.min[1], d.score[1]);
 }
 
+void score_board_just_max(Board2& board, bool patterned, LcgPair& rng, u32 (&result)[2]) {
+	D4<true> d(board);
+	d.estimate(board.headings[0].pos, board.headings[1].pos, patterned, rng);
+
+	result[0] = d.score[0];
+	result[1] = d.score[1];
+}
+
+BoardMoves best_lookup_moves(Board2& board, Player pl) {
+	auto pos = board.headings[pl].pos;
+	
+	BoardMoves best_moves = (BoardMoves)moves_d5[diamond5(board, pos)];
+
+	return best_moves;
+}
+
 BoardMoves best_dist_moves(Board2& board, Player pl, LcgPair& rng) {
 	auto pos = board.headings[pl].pos;
 	i32 best = -0x7fffffff;
@@ -719,8 +722,8 @@ BoardMoves best_dist_moves(Board2& board, Player pl, LcgPair& rng) {
 					cur_board2.headings[pl].pos = candidates2[j];
 
 					MinMax<> result[2];
-					score_board4(cur_board, false, rng, result);
-					i32 cand_best = (i32)result[0].max - (i32)result[1].max;
+					score_board4(cur_board2, false, rng, result);
+					i32 cand_best = (i32)result[pl].max - (i32)result[pl ^ 1].max;
 					if (cand_best > best) {
 						best = cand_best;
 						best_moves = BoardMoves(1 << i);

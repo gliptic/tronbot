@@ -29,7 +29,7 @@ void render_board(usize board_count, BitBoard** boards, TPixel const* colors, Pl
 					}
 				}
 
-				for (usize i = 0; i < count; ++i) {
+				for (u32 i = 0; i < count; ++i) {
 					usize c = filled[i];
 					u32 subx = i * size / count;
 					u32 nextx = (i + 1) * size / count;

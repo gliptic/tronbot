@@ -117,7 +117,7 @@ struct CounterF {
 		f32 adjusted_total = f32(total);
 
 		if (false) {
-			return r + 1.15f * sqrtf(total_total) / (adjusted_total + 1.f);
+			return r + 1.15f * sqrtf((f32)total_total) / (adjusted_total + 1.f);
 			//return r + 1.0f * sqrtf(total_total) / (adjusted_total + 1.f);
 		} else {
 			if (total < 1024) {
@@ -134,16 +134,22 @@ struct CounterF {
 
 	template<int Variant>
 	void add(f32 wins, u32 pl, SelectInfo const&) {
-		auto prev_total = f32(this->total);
+		if (!this->is_dead()) { // TODO: Check how often this triggers and try to minimize it
+			auto prev_total = f32(this->total);
 
-		this->r = this->r + (wins - this->r) / (prev_total + 1.f);
-		++this->total;
+			this->r = this->r + (wins - this->r) / (prev_total + 1.f);
+			++this->total;
+		}
 	}
 
 	bool less_visited(CounterF const& other) const {
 		u32 f_total = this->total & 0x7fffffff;
 		u32 f_other_total = other.total & 0x7fffffff;
 		return f_total < f_other_total || (f_total == f_other_total && this->r < other.r);
+	}
+
+	bool is_dead() const {
+		return this->total == 0x80000000;
 	}
 
 	bool operator==(CounterF const& other) const {
@@ -482,18 +488,6 @@ struct GameNodeJ : BaseGameNodeJ {
 		} else {
 			auto& p = players[0];
 
-#if 0
-			for (u32 m1 = 0; m1 < 3; ++m1) {
-				auto min_min = std::min({ this->life[0 + m1 * 3][0].min, this->life[1 + m1 * 3][0].min, this->life[2 + m1 * 3][0].min });
-				for (u32 m0 = 0; m0 < 3; ++m0) {
-					if (this->life[m0 + m1 * 3][0].max < min_min) {
-						// Prune (m0, m1)
-						printf("%d %d\n", m0, m1);
-					}
-				}
-			}
-#endif
-
 			p0 = p.pick_move<Variant>(rng);
 		}
 
@@ -575,6 +569,7 @@ struct McBotJ : Bot {
 	bool has_written_board;
 	u32 updates;
 	u32 cells_left;
+	u32 pruned;
 
 	CounterF amaf[2][256];
 	vector<VisitedEdge<GN>> visited;
@@ -586,7 +581,8 @@ struct McBotJ : Bot {
 		  total_updates(0),
 		  same_count(0),
 		  updates(0),
-		  cells_left(0) {
+		  cells_left(0),
+		  pruned(0) {
 
 		init_ucb_tab();
 
@@ -736,40 +732,42 @@ struct McBotJ : Bot {
 		}
 	}
 
-	inline u32 expand_node(Board& board, u32 cells_left_count);
+	inline u32 expand_node(Board& board, MinMax<> life0, MinMax<> life1);
 	void run();
 };
 
 template<int Variant, typename GN>
-inline void warmup(McBotJ<Variant, GN>& self, GN& ch, Board& board, u32 cells_left_count) {
+inline void warmup(McBotJ<Variant, GN>& self, GN& ch, Board& board, MinMax<> life0, MinMax<> life1) {
 	for (u32 m = 0; m < 3; ++m) {
 		auto next_pos0 = PlayerHeading::next_pos(board.headings[0].pos, board.headings[0].get_move(m));
 		auto next_pos1 = PlayerHeading::next_pos(board.headings[1].pos, board.headings[1].get_move(m));
 		bool wall_hit0 = board.is_wall(next_pos0);
 		bool wall_hit1 = board.is_wall(next_pos1);
 
-		auto life0 = wall_hit0 ? MinMax<>::zero() : MinMax<>(1, cells_left_count);
-		auto life1 = wall_hit1 ? MinMax<>::zero() : MinMax<>(1, cells_left_count);
-
 		ch.players[0].move[m] = wall_hit0 ? GN::Counter::unlikely() : GN::Counter::even_zero();
-		ch.players[0].life[m] = life0;
 		ch.players[1].move[m] = wall_hit1 ? GN::Counter::unlikely() : GN::Counter::even_zero();
-		ch.players[1].life[m] = life1;
 
-		ch.life[m + 0 * 3][0] = life0;
-		ch.life[m + 1 * 3][0] = life0;
-		ch.life[m + 2 * 3][0] = life0;
-		ch.life[0 + m * 3][1] = life1;
-		ch.life[1 + m * 3][1] = life1;
-		ch.life[2 + m * 3][1] = life1;
+		if (Variant) {
+			auto move_life0 = wall_hit0 ? MinMax<>::zero() : MinMax<>(std::max(life0.min, u8(1)), std::max(life0.max, u8(1)));
+			auto move_life1 = wall_hit1 ? MinMax<>::zero() : MinMax<>(std::max(life1.min, u8(1)), std::max(life1.max, u8(1)));
+			ch.players[0].life[m] = move_life0;
+			ch.players[1].life[m] = move_life1;
+
+			ch.life[m + 0 * 3][0] = move_life0;
+			ch.life[m + 1 * 3][0] = move_life0;
+			ch.life[m + 2 * 3][0] = move_life0;
+			ch.life[0 + m * 3][1] = move_life1;
+			ch.life[1 + m * 3][1] = move_life1;
+			ch.life[2 + m * 3][1] = move_life1;
+		}
 	}
 }
 
 template<int Variant, typename GN>
-inline u32 McBotJ<Variant, GN>::expand_node(Board& board, u32 cells_left_count) {
+inline u32 McBotJ<Variant, GN>::expand_node(Board& board, MinMax<> life0, MinMax<> life1) {
 	u32 node = tree.alloc_node();
 	auto& r = tree.get(node);
-	warmup(*this, r, board, cells_left_count);
+	warmup(*this, r, board, life0, life1);
 	return node;
 }
 
@@ -777,18 +775,18 @@ template<int Variant, typename GN>
 void McBotJ<Variant, GN>::run() {
 	GameState state(this->state);
 	
-	u32 cur_depth = 0;
+	//u32 cur_depth = 0;
 	u32 update_count = this->updates;
 	u32 cells_left_count = this->cells_left;
 	NodeId node = tree.root;
+	MinMax<> result[2] = { MinMax<>(0, cells_left_count), MinMax<>(0, cells_left_count) };
 	if (node == 0) {
-		tree.root = node = expand_node(state.board, cells_left_count);
+		tree.root = node = expand_node(state.board, result[0], result[1]);
 	}
 
 	visited.clear();
 
 	f32 p0;
-	MinMax<> result[2];
 
 	while (true) {
 		typename GN::SelectInfo select_info;
@@ -798,66 +796,97 @@ void McBotJ<Variant, GN>::run() {
 
 		auto& n = tree.get(node);
 
-		if (!n.has_stats(child)) {
-			
-			visited.push_back(VisitedEdge<GN>(node, child, state.board.headings[0].pos.compact(), state.board.headings[1].pos.compact(), select_info));
-			u32 end_state = state.update(state.board.get_moves(child));
-			++sims;
-			++cur_depth;
-			
-			if (end_state) {
-				p0 = end_state == 1 ? 0.f : (end_state == 2 ? 1.f : 0.5f);
-				result[0] = (end_state & 1) ? MinMax<>::zero() : MinMax<>(1, cells_left_count);
-				result[1] = (end_state & 2) ? MinMax<>::zero() : MinMax<>(1, cells_left_count);
-			} else {
-				score_board4(state.board, false, this->rng, result);
-				i32 score = (i32)result[0].max - (i32)result[1].max;
+		visited.push_back(VisitedEdge<GN>(node, child, state.board.headings[0].pos.compact(), state.board.headings[1].pos.compact(), select_info));
+		u32 end_state = state.update(state.board.get_moves(child));
+		++sims;
 
-				/*
-				if (score != score2) {
-					printf("%d %d\n", score, score2);
-				}*/
-				p0 = score < 0 ? 0.f : (score > 0 ? 1.f : 0.5f);
-				// TODO: Create "survivor"-subnode if there is no intersection after last move
+		if (end_state) {
+			p0 = end_state == 1 ? 0.f : (end_state == 2 ? 1.f : 0.5f);
+			if (Variant) {
+				if (end_state & 1)
+					result[0] = MinMax<>::zero();
+				else {
+					assert(result[0].max > 0);
+					result[0].min = std::max(result[0].min, u8(1));
+				}
 
-				// Life is measured from the last node recorded in visited
-				result[0] = result[0] + 1;
-				result[1] = result[1] + 1;
+				if (end_state & 2)
+					result[1] = MinMax<>::zero();
+				else {
+					assert(result[1].max > 0);
+					result[1].min = std::max(result[1].min, u8(1));
+				}
 			}
 			break;
-
-		} else {
-			auto child_index = child.index();
-			auto child_id = n.children[child_index];
-
-			visited.push_back(VisitedEdge<GN>(node, child, state.board.headings[0].pos.compact(), state.board.headings[1].pos.compact(), select_info));
-			u32 end_state = state.update(state.board.get_moves(child));
-
-			if (!end_state && child_id == 0) {
-				tree.get(node).children[child_index] = child_id = expand_node(state.board, cells_left_count - 2);
-			}
-
-			node = child_id;
-			++sims;
-			++cur_depth;
-
-			if (end_state) {
-				p0 = end_state == 1 ? 0.f : (end_state == 2 ? 1.f : 0.5f);
-				result[0] = (end_state & 1) ? MinMax<>::zero() : MinMax<>(1, cells_left_count);
-				result[1] = (end_state & 2) ? MinMax<>::zero() : MinMax<>(1, cells_left_count);
-				break;
-			}
 		}
 
-		cells_left_count -= 2;
+		if (!n.has_stats(child)) {
+
+			// TODO: Create "survivor"-subnode if there is no intersection after last move
+
+			// Life is measured from the last node recorded in visited,
+			// so we need to add 1 to the computed result.
+			i32 score;
+			if (Variant) {
+				MinMax<> new_result[2];
+				score_board4(state.board, false, this->rng, new_result);
+				result[0] = result[0] & (new_result[0] + 1);
+				result[1] = result[1] & (new_result[1] + 1);
+				score = (i32)new_result[0].max - (i32)new_result[1].max;
+			} else {
+				u32 new_result[2];
+				score_board_just_max(state.board, false, this->rng, new_result);
+				score = (i32)new_result[0] - (i32)new_result[1];
+			}
+			p0 = score < 0 ? 0.f : (score > 0 ? 1.f : 0.5f);
+			break;
+		}
+
+		auto child_index = child.index();
+		auto child_id = n.children[child_index];
+
+		if (Variant) {
+
+			// TODO: Will this ever improve bounds?
+			//result[0] = result[0] & n.players[0].life[child.v[0]];
+			//result[1] = result[1] & n.players[1].life[child.v[1]];
+			result[0] = result[0] & n.life[child_index][0];
+			result[1] = result[1] & n.life[child_index][1];
+
+			if (result[0].min > 0) {
+				--result[0].min;
+			}
+			result[0].max -= 1;
+			assert(result[0].is_valid());
+
+			if (result[1].min > 0) {
+				--result[1].min;
+			}
+			result[1].max -= 1;
+			assert(result[1].is_valid());
+		}
+
+		if (child_id == 0) {
+			tree.get(node).children[child_index] = child_id = expand_node(state.board, result[0], result[1]);
+
+			// TEMP
+			auto& ch = tree.get(child_id);
+			/*
+			if (ch.players[1].life[0].max == 0 && ch.players[1].life[1].max == 0 && ch.players[1].life[2].max == 0) {
+				printf("x");
+			}
+			*/
+		}
+
+		node = child_id;
 	}
 
-	this->depth = std::max(this->depth, cur_depth);
+	this->depth = std::max(this->depth, (u32)visited.size());
 
 	f32 scores[2] = { p0, 1.f - p0 };
 	bool prop[2] = { true, true };
 
-	for (u32 i = visited.size(); i-- > 0; ) {
+	for (u32 i = (u32)visited.size(); i-- > 0; ) {
 		auto& v = visited[i];
 
 		auto& n = tree.get(v.node);
@@ -867,22 +896,65 @@ void McBotJ<Variant, GN>::run() {
 		amaf[0][v.to_pos[0]].add<Variant>(scores[0], 0, CounterF::SelectInfo());
 		amaf[1][v.to_pos[1]].add<Variant>(scores[1], 1, CounterF::SelectInfo());
 
-		auto& l = n.life[v.edge.index()];
+		if (Variant) {
+			auto& l = n.life[v.edge.index()];
 		
-		for (u32 p = 0; p < 2; ++p) {
-			if (prop[p]) {
-				bool new_prop = l[p].and_(result[p]);
-				prop[p] = new_prop;
+			for (u32 p = 0; p < 2; ++p) {
+				if (prop[p]) {
+					bool new_prop = l[p].and_(result[p]);
+					prop[p] = new_prop;
 
-				if (new_prop) {
-					auto m = v.edge.v[p];
-					if (p == 0) {
-						n.players[p].life[m] = n.life[0 + m * 3][p] | n.life[1 + m * 3][p] | n.life[2 + m * 3][p];
-					} else {
-						n.players[p].life[m] = n.life[m + 0 * 3][p] | n.life[m + 1 * 3][p] | n.life[m + 2 * 3][p];
+					if (new_prop) {
+						auto m = v.edge.v[p];
+						// Player p has no control over which opponent move is chosen, so we use | instead of ^
+						if (p == 0) {
+							n.players[p].life[m] = n.life[0 + m * 3][p] | n.life[1 + m * 3][p] | n.life[2 + m * 3][p];
+						} else {
+							n.players[p].life[m] = n.life[m + 0 * 3][p] | n.life[m + 1 * 3][p] | n.life[m + 2 * 3][p];
+						}
 					}
+				}
+			}
 
-					result[p] = (n.players[p].life[0] | n.players[p].life[1] | n.players[p].life[2]) + 1;
+			/*
+			Prune options for a move:
+			  A move is always worse than all unpruned moves of the opponent:
+				p.life[m] < life[m, 0..<3] filter { # would_make } fold(or)
+
+			  A move is always worse than all the other possible unpruned moves:
+				p.life[m] < p.life[0..<3 filter {# != m}] fold(or)
+			*/
+
+			MinMax<> combined[2];
+
+			if (prop[0] || prop[1]) {
+				for (u32 p = 0; p < 2; ++p) {
+					combined[p] = n.players[p].life[0] ^ n.players[p].life[1] ^ n.players[p].life[2];
+				}
+			}
+
+			for (u32 p = 0; p < 2; ++p) {
+				if (prop[p]) {
+					for (u32 m = 0; m < 3; ++m) {
+						if (!n.players[p].move[m].is_dead()
+						  && (n.players[p].life[m] < combined[0] || n.players[p].life[m] < combined[1])) {
+							// Prune because this move is worse than all other moves we can make
+							// or all moves the opponent can make.
+							n.players[p].move[m] = GN::Counter::unlikely();
+							//printf("Pruned %d %d\n", p, m);
+							++this->pruned;
+
+							/* TODO: Free pruned subtrees
+							if (p == 0) {
+								for (u32 m2 = 0; m2 < 3; ++m2) {
+									tree.free_subtree();
+								}
+							}
+							*/
+						}
+					}
+			
+					result[p] = combined[p] + 1;
 				}
 			}
 		}

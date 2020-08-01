@@ -40,6 +40,12 @@ struct LcgPair {
 		return x;
 	}
 
+	u64 next_u64() {
+		u32 a = next();
+		u32 b = next();
+		return ((u64)a << 32) + b;
+	}
+
 	TinyEntropy tiny_entropy() {
 		return TinyEntropy(next());
 	}

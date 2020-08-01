@@ -23,32 +23,32 @@
     <ProjectGuid>{3B44B62C-D8C6-47A2-AC84-8BE8BB658DC0}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>tronbot</RootNamespace>
-    <WindowsTargetPlatformVersion>10.0.14393.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -149,6 +149,7 @@
   <ItemGroup>
     <ClCompile Include="gfx.cpp" />
     <ClCompile Include="src\mcbotj.cpp" />
+    <ClCompile Include="src\negamax.cpp" />
     <ClCompile Include="src\silly_bot.cpp" />
     <ClCompile Include="src\tigr.c" />
     <ClInclude Include="driver.hpp" />
@@ -159,6 +160,7 @@
     <ClInclude Include="gfx.hpp" />
     <ClInclude Include="src\gametree.hpp" />
     <ClInclude Include="src\mcbotj.hpp" />
+    <ClInclude Include="src\negamax.hpp" />
     <ClInclude Include="src\rand.hpp" />
     <ClInclude Include="src\silly_bot.hpp" />
     <ClInclude Include="src\thread.hpp" />

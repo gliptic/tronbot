@@ -40,7 +40,6 @@ struct PlayerHeading {
 		return new_pos;
 	}
 
-	// TODO: Move this to PlayerHeading
 	BoardMoves get_move(u32 child) {
 		return move_from_child(this->prev_move, child);
 	}
@@ -351,11 +350,11 @@ inline u32 diamond5(B const& board, Vec pos) {
 inline u32 index_diamond5(u32 d5, u32 first_dir) {
 	switch (first_dir) {
 	case RIGHT:
-		return ((d5 >> 5) & 1) | (((d5 >> 1) & 1) << 1) | (((d5 >> 4) & 1) << 2) | (((d5 >> 8) & 1) << 3);
+		return ((d5 >> 6) & 1) | (((d5 >> 10) & 1) << 1) | (((d5 >> 7) & 1) << 2) | (((d5 >> 3) & 1) << 3);
 	case DOWN:
 		return ((d5 >> 9) & 1) | (((d5 >> 8) & 1) << 1) | (((d5 >> 11) & 1) << 2) | (((d5 >> 10) & 1) << 3);
 	case LEFT:
-		return ((d5 >> 6) & 1) | (((d5 >> 10) & 1) << 1) | (((d5 >> 7) & 1) << 2) | (((d5 >> 3) & 1) << 3);
+		return ((d5 >> 5) & 1) | (((d5 >> 1) & 1) << 1) | (((d5 >> 4) & 1) << 2) | (((d5 >> 8) & 1) << 3);
 	case UP:
 		return ((d5 >> 2) & 1) | (((d5 >> 3) & 1) << 1) | (((d5 >> 0) & 1) << 2) | (((d5 >> 1) & 1) << 3);
 	default:
@@ -381,18 +380,6 @@ struct Board2 : BoardCommon<Board2>, BitBoard {
 		}
 	}
 
-	/*
-	u32 neighborhood5(Vec pos) {
-		u32 a = pos.y > 0 ? bits[pos.y - 1] : 0;
-		u32 b = bits[pos.y];
-		u32 c = bits[pos.y + 1];
-		u32 d = bits[pos.y + 2];
-		u32 e = pos.y < 15 ? bits[pos.y + 3] : 0;
-
-		rotr(a, pos.x - 2) & 31
-	}
-	*/
-
 	Board2();
 	Board2(std::stringstream &stream);
 };
@@ -407,6 +394,7 @@ struct MinMax {
 
 	MinMax(T min, T max)
 		: min(min), max(max) {
+		assert(this->is_valid());
 	}
 
 	static MinMax zero() {
@@ -422,10 +410,21 @@ struct MinMax {
 	}
 
 	MinMax operator+(T x) const {
-		return MinMax(this->min + 1, this->max + 1);
+		MinMax r(this->min + x, this->max + x);
+		return r;
+	}
+
+	MinMax operator-(T x) const {
+		assert(this->min >= x && this->max >= x);
+		return MinMax(this->min - x, this->max - x);
 	}
 
 	MinMax operator&(MinMax other) const {
+		if (this->max <= other.min || other.max <= this->min) {
+			// Previous values assumed no stupid moves were made, and
+			// clearly we made stupid moves :(. Assume other is more accurate.
+			return other;
+		}
 		return MinMax(std::max(this->min, other.min), std::min(this->max, other.max));
 	}
 
@@ -433,8 +432,30 @@ struct MinMax {
 		return MinMax(std::min(this->min, other.min), std::max(this->max, other.max));
 	}
 
+	MinMax operator^(MinMax other) const {
+		// [1, 1] [1, 2]
+		// 1 <= 2 -> true
+		// 2 <= 1 -> false
+		if (this->max <= other.min) {
+			assert(other.is_valid());
+			return other;
+		} else if (other.max <= this->min) {
+			assert(this->is_valid());
+			return *this;
+		}
+
+		return MinMax(std::min(this->min, other.min), std::max(this->max, other.max));
+	}
+
 	bool and_(MinMax other) {
 		bool changed = false;
+		if (this->max <= other.min || other.max <= this->min) {
+			// Previous values assumed no stupid moves were made, and
+			// clearly someone made stupid moves. Assume other is more accurate.
+			*this = other;
+			return true;
+		}
+
 		if (other.min > this->min) {
 			this->min = other.min;
 			changed = true;
@@ -443,11 +464,17 @@ struct MinMax {
 			this->max = other.max;
 			changed = true;
 		}
+		assert(this->is_valid());
+
 		return changed;
 	}
 
+	bool operator<(T other_min) const {
+		return this->max < other_min || (this->max == other_min && this->min < other_min);
+	}
+
 	bool operator<(MinMax& other) const {
-		return this->max <= other.min;
+		return this->max < other.min || (this->max == other.min && this->min < other.min);
 	}
 
 	bool operator==(MinMax const& other) const {
@@ -457,13 +484,20 @@ struct MinMax {
 	bool operator!=(MinMax const& other) const {
 		return !operator==(other);
 	}
+
+	bool is_valid() const {
+		return this->min <= this->max;
+	}
 };
 
 i32 score_board(Board2& board);
 i32 score_board2(Board2& board, Vec pos, Player pl);
 i32 score_board3(Board2& board, Vec pos, Player pl, bool patterned);
 void score_board4(Board2& board, bool patterned, LcgPair& rng, MinMax<>(&result)[2]);
+void score_board_just_max(Board2& board, bool patterned, LcgPair& rng, u32(&result)[2]);
+
 BoardMoves best_dist_moves(Board2& board, Player pl, LcgPair& rng);
+BoardMoves best_lookup_moves(Board2& board, Player pl);
 
 typedef Board2 Board;
 

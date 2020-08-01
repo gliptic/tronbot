@@ -21,6 +21,9 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="gfx.cpp" />
+    <ClCompile Include="src\negamax.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="src">
@@ -60,5 +63,8 @@
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="gfx.hpp" />
+    <ClInclude Include="src\negamax.hpp">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
